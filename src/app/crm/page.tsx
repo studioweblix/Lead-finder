@@ -20,6 +20,7 @@ interface CrmLead {
   notes: string | null;
   created_at: string;
   last_seen_at: string | null;
+  instagram?: string | null;
 }
 
 type CrmStatus = "saved" | "called" | "callback" | "interested" | "not_interested" | "converted";
@@ -112,6 +113,19 @@ export default function CrmPage() {
       setNotesSaving((prev) => { const n = new Set(prev); n.delete(placeId); return n; });
       setNotesSaved((prev) => new Set(prev).add(placeId));
       setTimeout(() => setNotesSaved((prev) => { const n = new Set(prev); n.delete(placeId); return n; }), 2000);
+    }, 1000);
+  };
+
+  const updateInstagram = (placeId: string, value: string) => {
+    setLeads((prev) => prev.map((l) => l.place_id === placeId ? { ...l, instagram: value } : l));
+    const key = `${placeId}-instagram`;
+    if (debounceTimers.current[key]) clearTimeout(debounceTimers.current[key]);
+    debounceTimers.current[key] = setTimeout(async () => {
+      await fetch("/api/leads", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ place_id: placeId, instagram: value }),
+      });
     }, 1000);
   };
 
@@ -214,6 +228,11 @@ export default function CrmPage() {
                         lead.rating ? "★" + lead.rating.toFixed(1) : null,
                       ].filter(Boolean).join(" · ")}
                     </p>
+                    {lead.instagram && (
+                      <p className="text-[10px] mt-0.5">
+                        <a href={`https://instagram.com/${lead.instagram.replace(/^@/, "")}`} target="_blank" rel="noopener noreferrer" className="text-pink-400 hover:text-pink-300">@{lead.instagram.replace(/^@/, "")}</a>
+                      </p>
+                    )}
                   </div>
                   {phone ? (
                     <a
@@ -257,7 +276,33 @@ export default function CrmPage() {
                   })}
                 </div>
 
-                {/* Row 3: notes */}
+                {/* Row 3: instagram */}
+                <div className="pl-[18px] space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-zinc-600 w-16 shrink-0">Instagram</span>
+                    <input
+                      value={lead.instagram ?? ""}
+                      onChange={(e) => updateInstagram(lead.place_id, e.target.value)}
+                      placeholder="@handle"
+                      className="flex-1 bg-transparent text-[11px] text-pink-400 placeholder:text-zinc-800 outline-none border-b border-zinc-900 focus:border-zinc-700 transition-colors py-0.5 min-w-0"
+                    />
+                    {lead.instagram && (
+                      <a href={`https://instagram.com/${lead.instagram.replace(/^@/, "")}`} target="_blank" rel="noopener noreferrer" className="text-zinc-600 hover:text-pink-400 transition-colors text-[10px] shrink-0">↗</a>
+                    )}
+                  </div>
+                  {!lead.instagram && (
+                    <a
+                      href={`https://www.google.com/search?q=site%3Ainstagram.com+%22${encodeURIComponent(lead.name)}%22+%22${encodeURIComponent(lead.city ?? "")}%22`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block pl-[70px] text-[10px] text-zinc-700 hover:text-pink-400 transition-colors"
+                    >
+                      Instagram suchen ↗
+                    </a>
+                  )}
+                </div>
+
+                {/* Row 4: notes */}
                 <div className="pl-[18px] relative">
                   <textarea
                     value={lead.notes ?? ""}
@@ -272,7 +317,7 @@ export default function CrmPage() {
                   </span>
                 </div>
 
-                {/* Row 4: meta */}
+                {/* Row 5: meta */}
                 <p className="pl-[18px] text-[10px] text-zinc-700">
                   {formatDate(lead.created_at)}
                 </p>

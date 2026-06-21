@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { scoreLead, getScoreInfo } from "@/lib/scoring";
 import type { MappedLead } from "@/app/api/find-leads/route";
+import { CITIES, STATES } from "@/lib/german-cities";
 
 // ---- Types ------------------------------------------------------------------
 
@@ -78,6 +79,12 @@ export default function Home() {
   const [radiusKm, setRadiusKm] = useState(5);
   const [categories, setCategories] = useState<string[]>(["restaurant"]);
 
+  // Stadtauswahl state
+  const [cityPickerOpen, setCityPickerOpen] = useState(false);
+  const [citySearch, setCitySearch] = useState("");
+  const [selectedState, setSelectedState] = useState("Alle");
+  const [searchedCities, setSearchedCities] = useState<Set<string>>(new Set());
+
   // App state
   const [loading, setLoading] = useState(false);
   const [loadingAll, setLoadingAll] = useState(false);
@@ -93,6 +100,15 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<SortType>("score");
   const [expanded, setExpanded] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetch("/api/leads?distinct_cities=true")
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => {
+        if (d?.cities) setSearchedCities(new Set(d.cities.map((c: string) => c.toLowerCase())));
+      })
+      .catch(() => {});
+  }, []);
 
   const toggleCategory = (id: string) =>
     setCategories((prev) =>
@@ -128,6 +144,7 @@ export default function Home() {
       setRawLeads(data.leads ?? []);
       setSearchedCity(data.city ?? city.trim());
       setHasSearched(true);
+      setSearchedCities((prev) => new Set(prev).add((data.city ?? city.trim()).toLowerCase()));
 
       if ((data.leads ?? []).length === 0) {
         setToast({
@@ -203,6 +220,7 @@ export default function Home() {
       description: "",
       verified: l.business_status === "OPERATIONAL",
       internationalPhone: String(l.international_phone ?? ""),
+      instagram: String(l.instagram ?? ""),
     }));
 
   const handleFetchAllLeads = async (statusFilter?: string) => {
@@ -448,6 +466,117 @@ export default function Home() {
         </form>
       </div>
 
+      {/* Stadtauswahl */}
+      <div className="max-w-2xl mx-auto px-5 pb-2">
+        <button
+          onClick={() => setCityPickerOpen((o) => !o)}
+          className="w-full flex items-center justify-between text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-800 hover:border-zinc-600 rounded-xl px-4 py-2.5 transition-colors bg-zinc-900/40"
+        >
+          <span className="flex items-center gap-2">
+            <span>🗺</span>
+            <span>Alle deutschen Städte durchsuchen</span>
+            <span className="text-zinc-700">
+              {searchedCities.size > 0 && `· ${searchedCities.size} bereits gesucht`}
+            </span>
+          </span>
+          <span className="text-zinc-600">{cityPickerOpen ? "▲" : "▼"}</span>
+        </button>
+
+        {cityPickerOpen && (
+          <div className="mt-1 border border-zinc-800 rounded-xl bg-zinc-900/80 p-4 space-y-3">
+            {/* Suche + State-Filter */}
+            <div className="flex gap-2">
+              <input
+                value={citySearch}
+                onChange={(e) => setCitySearch(e.target.value)}
+                placeholder="Stadt suchen…"
+                className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-white text-xs outline-none focus:border-zinc-500 placeholder:text-zinc-600"
+              />
+              <select
+                value={selectedState}
+                onChange={(e) => setSelectedState(e.target.value)}
+                className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs text-white outline-none"
+              >
+                <option value="Alle">Alle Länder</option>
+                {STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+
+            {/* Legende */}
+            <div className="flex items-center gap-4 text-[10px] text-zinc-600">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-zinc-700 inline-block" /> Noch nicht gesucht</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-700 inline-block" /> Bereits gesucht</span>
+            </div>
+
+            {/* Städteliste */}
+            {(() => {
+              const filtered = CITIES.filter((c) => {
+                const matchState = selectedState === "Alle" || c.state === selectedState;
+                const matchSearch = !citySearch.trim() || c.name.toLowerCase().includes(citySearch.toLowerCase());
+                return matchState && matchSearch;
+              });
+
+              const remaining = filtered.filter((c) => !searchedCities.has(c.name.toLowerCase()));
+              const done = filtered.filter((c) => searchedCities.has(c.name.toLowerCase()));
+
+              return (
+                <div className="max-h-64 overflow-y-auto space-y-3 pr-1">
+                  {remaining.length > 0 && (
+                    <div>
+                      <p className="text-[9px] uppercase tracking-wider text-zinc-600 mb-1.5">
+                        Noch nicht gesucht ({remaining.length})
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {remaining.map((c) => (
+                          <button
+                            key={c.name}
+                            onClick={() => {
+                              setCity(c.name);
+                              setCityPickerOpen(false);
+                              setCitySearch("");
+                            }}
+                            className="px-2.5 py-1 rounded-lg text-[11px] bg-zinc-800 border border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:text-white transition-colors"
+                          >
+                            {c.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {done.length > 0 && (
+                    <div>
+                      <p className="text-[9px] uppercase tracking-wider text-zinc-600 mb-1.5">
+                        Bereits gesucht ({done.length})
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {done.map((c) => (
+                          <button
+                            key={c.name}
+                            onClick={() => {
+                              setCity(c.name);
+                              setCityPickerOpen(false);
+                              setCitySearch("");
+                            }}
+                            className="px-2.5 py-1 rounded-lg text-[11px] bg-zinc-900 border border-zinc-800 text-zinc-600 line-through hover:no-underline hover:text-zinc-400 transition-colors"
+                          >
+                            {c.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {filtered.length === 0 && (
+                    <p className="text-xs text-zinc-600 text-center py-4">Keine Stadt gefunden.</p>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+      </div>
+
       {/* Results */}
       {hasSearched && scored.length > 0 && (
         <div className="max-w-5xl mx-auto px-5 pb-12">
@@ -535,6 +664,17 @@ export default function Home() {
                       ) : (
                         <span className="text-zinc-700 text-[11px]">Kein Telefon</span>
                       )}
+                      {r.instagram && (
+                        <a
+                          href={`https://instagram.com/${r.instagram.replace(/^@/, "")}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="block text-pink-400 text-[11px] no-underline hover:text-pink-300 mt-0.5"
+                        >
+                          📷 @{r.instagram.replace(/^@/, "")}
+                        </a>
+                      )}
                     </div>
 
                     <div className="w-[130px] shrink-0">
@@ -609,6 +749,12 @@ export default function Home() {
                             <span className="text-green-400">Geöffnet / Aktiv</span>
                           </div>
                         )}
+                        {r.instagram && (
+                          <div>
+                            <span className="text-zinc-600">Instagram:</span>{" "}
+                            <a href={`https://instagram.com/${r.instagram.replace(/^@/, "")}`} target="_blank" rel="noopener noreferrer" className="text-pink-400 hover:text-pink-300">@{r.instagram.replace(/^@/, "")}</a>
+                          </div>
+                        )}
                       </div>
                       <div className="flex gap-1.5 mt-2.5 flex-wrap">
                         {r.phone && (
@@ -627,8 +773,29 @@ export default function Home() {
                           onClick={(e) => e.stopPropagation()}
                           className="bg-zinc-800 text-zinc-400 px-3 py-1 rounded-md text-[11px] no-underline hover:bg-zinc-700 transition-colors"
                         >
-                          📍 Google Maps
+                          📍 Maps
                         </a>
+                        {r.instagram ? (
+                          <a
+                            href={`https://instagram.com/${r.instagram.replace(/^@/, "")}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="bg-zinc-800 text-pink-400 px-3 py-1 rounded-md text-[11px] no-underline hover:bg-zinc-700 transition-colors"
+                          >
+                            @{r.instagram.replace(/^@/, "")}
+                          </a>
+                        ) : (
+                          <a
+                            href={`https://www.google.com/search?q=site%3Ainstagram.com+%22${encodeURIComponent(r.name)}%22+%22${encodeURIComponent(r.city)}%22`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="bg-zinc-800 text-pink-400 px-3 py-1 rounded-md text-[11px] no-underline hover:bg-zinc-700 transition-colors"
+                          >
+                            Instagram suchen
+                          </a>
+                        )}
                       </div>
                     </div>
                   )}

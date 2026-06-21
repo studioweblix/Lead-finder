@@ -10,6 +10,20 @@ export async function GET(request: NextRequest) {
   }
 
   const params = request.nextUrl.searchParams;
+
+  // Sonderfall: distinct gesuchte Städte zurückgeben
+  if (params.get("distinct_cities") === "true") {
+    const { data, error } = await leadsSupabase
+      .from("leads")
+      .select("source_search")
+      .not("source_search", "is", null);
+
+    if (error) return Response.json({ error: error.message }, { status: 500 });
+
+    const cities = [...new Set((data ?? []).map((r) => r.source_search as string).filter(Boolean))];
+    return Response.json({ cities });
+  }
+
   const city = params.get("city");
   const status = params.get("status");
   const limit = Math.min(parseInt(params.get("limit") ?? "200"), 500);
@@ -19,7 +33,7 @@ export async function GET(request: NextRequest) {
     .select(
       "place_id, name, phone, international_phone, address, city, postcode, " +
       "country, primary_type, types, rating, has_website, website_url, " +
-      "business_status, status, notes, created_at, last_seen_at"
+      "business_status, status, notes, instagram, created_at, last_seen_at"
     )
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -63,19 +77,19 @@ export async function PATCH(request: NextRequest) {
     return Response.json({ error: "Supabase nicht konfiguriert." }, { status: 503 });
   }
 
-  let body: { place_id?: string; status?: string; notes?: string };
+  let body: { place_id?: string; status?: string; notes?: string; instagram?: string };
   try {
     body = await request.json();
   } catch {
     return Response.json({ error: "Ungültiger Body" }, { status: 400 });
   }
 
-  const { place_id, status, notes } = body;
+  const { place_id, status, notes, instagram } = body;
   if (!place_id) {
     return Response.json({ error: "place_id ist erforderlich" }, { status: 400 });
   }
-  if (!status && notes === undefined) {
-    return Response.json({ error: "status oder notes müssen angegeben werden" }, { status: 400 });
+  if (!status && notes === undefined && instagram === undefined) {
+    return Response.json({ error: "Mindestens ein Feld muss angegeben werden" }, { status: 400 });
   }
 
   const ALLOWED_STATUSES = ["new", "saved", "called", "callback", "interested", "not_interested", "converted"];
@@ -86,6 +100,7 @@ export async function PATCH(request: NextRequest) {
   const update: Record<string, string> = {};
   if (status) update.status = status;
   if (notes !== undefined) update.notes = notes;
+  if (instagram !== undefined) update.instagram = instagram;
 
   const { error } = await leadsSupabase
     .from("leads")

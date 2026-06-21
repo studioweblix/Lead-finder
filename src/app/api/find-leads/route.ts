@@ -62,6 +62,7 @@ export interface MappedLead {
   description: string;
   verified: boolean;
   internationalPhone: string;
+  instagram: string;
 }
 
 // ---- Helpers ----------------------------------------------------------------
@@ -85,6 +86,23 @@ function hatEigeneWebsite(url?: string): boolean {
     return !blocked.some((b) => host === b || host.endsWith("." + b));
   } catch {
     return false;
+  }
+}
+
+function extractInstagram(url?: string): string {
+  if (!url) return "";
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, "");
+    if (host !== "instagram.com" && !host.endsWith(".instagram.com")) return "";
+    const handle = u.pathname.split("/").filter(Boolean)[0];
+    if (!handle) return "";
+    // Reservierte Pfade ausschließen (keine echten Profile)
+    const reserved = ["p", "reel", "reels", "explore", "stories", "tv", "accounts"];
+    if (reserved.includes(handle.toLowerCase())) return "";
+    return handle;
+  } catch {
+    return "";
   }
 }
 
@@ -130,6 +148,7 @@ function mapToLead(p: PlaceResult): MappedLead {
     description: "",
     verified: p.businessStatus === "OPERATIONAL",
     internationalPhone: p.internationalPhoneNumber ?? "",
+    instagram: extractInstagram(p.websiteUri),
   };
 }
 
@@ -155,6 +174,7 @@ function mapToDbRow(p: PlaceResult, city: string) {
     website_url: null,
     source_search: city,
     last_seen_at: now,
+    instagram: extractInstagram(p.websiteUri) || null,
   };
 }
 
